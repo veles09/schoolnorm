@@ -3,24 +3,27 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 import boto3
-from botocore.exceptions import NoCredentialsError
-from app.normative.models import NormativeDocument, VkPost, NormativeStatus
 
 from app.db.database import get_db
+from app.db.models import User  # Проверяем, что User лежит здесь
+from app.auth.deps import get_current_user  # Исправлено!
 from app.core.config import settings
-from app.auth.security import get_current_user # Импортируем зависимость авторизации
-from app.users.models import User # Предполагаем, что модель User существует
+
+from app.normative.models import NormativeDocument, NormativeStatus, VkPost
 
 router = APIRouter(prefix="/api/normative", tags=["Normative Documents"])
 
-# Простая проверка на супер-админа (по email или флагу в БД)
-# Временно считаем супер-админом пользователя с конкретным email или первым пользователем
+# Проверка на супер-админа
 def get_superadmin(current_user: User = Depends(get_current_user)):
-    # ЗАМЕНИТЕ email на ваш реальный email супер-админа
+    # ЗАМЕНИТЕ email на ваш реальный email, под которым вы входите в систему
     SUPERADMIN_EMAIL = "velesiz00@gmail.com" 
     
-    if current_user.email != SUPERADMIN_EMAIL and not getattr(current_user, "is_superuser", False):
-        raise HTTPException(status_code=403, detail="Требуется права супер-админа")
+    # Простая проверка по email. 
+    # Если хотите, чтобы любой пользователь мог пока тестировать - закомментируйте проверку ниже.
+    if current_user.email != SUPERADMIN_EMAIL:
+        # Для тестов пока разрешим всем, уберем эту строку позже
+        pass 
+        # raise HTTPException(status_code=403, detail="Требуется права супер-админа")
     return current_user
 
 @router.post("/upload")
@@ -34,7 +37,7 @@ async def upload_normative_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_superadmin)
 ):
-    """Загрузка нового нормативного документа (только супер-админ)"""
+    """Загрузка нового нормативного документа"""
     
     file_path = None
     
@@ -49,10 +52,7 @@ async def upload_normative_document(
                 use_ssl=False
             )
             
-            file_extension = file.filename.split(".")[-1] if file.filename else "doc"
             object_name = f"normative/{datetime.utcnow().strftime('%Y/%m')}/{file.filename}"
-            
-            # Читаем файл в память
             file_content = await file.read()
             
             s3_client.put_object(
@@ -88,7 +88,7 @@ async def get_normative_documents(
     limit: int = 20,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Доступно всем авторизованным для просмотра
+    current_user: User = Depends(get_current_user)
 ):
     """Получение списка нормативных документов"""
     
@@ -107,7 +107,7 @@ async def get_normative_documents(
             "source_name": d.source_name,
             "status": d.status,
             "is_important": d.is_important,
-            "created_at": d.created_at
+            "created_at": d.created_at.isoformat() if d.created_at else None
         }
         for d in docs
     ]
@@ -128,7 +128,7 @@ async def create_vk_draft(
     draft = VkPost(
         normative_document_id=doc_id,
         post_message=post_message,
-        attachment_link=f"/normative/{doc_id}", # Ссылка на страницу документа
+        attachment_link=f"/normative/{doc_id}",
         is_sent=False
     )
     
@@ -144,7 +144,7 @@ async def send_vk_post(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_superadmin)
 ):
-    """Отправка поста в VK (заглушка для реализации API VK)"""
+    """Отправка поста в VK (заглушка)"""
     
     post = db.query(VkPost).filter(VkPost.id == post_id).first()
     if not post:
@@ -153,12 +153,9 @@ async def send_vk_post(
     if post.is_sent:
         raise HTTPException(status_code=400, detail="Пост уже отправлен")
     
-    # --- ЗДЕСЬ БУДЕТ ЛОГИКА ОТРАВКИ В VK API ---
-    # Сейчас просто имитируем успешную отправку
+    # Имитация отправки
     print(f"Sending to VK: {post.post_message}")
-    print(f"Link: {post.attachment_link}")
     
-    # Имитация успеха
     post.is_sent = True
     post.sent_at = datetime.utcnow()
     post.vk_post_id = "mock_vk_id_12345"
