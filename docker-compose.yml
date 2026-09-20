@@ -60,7 +60,8 @@ services:
     container_name: schoolnorm_frontend
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # Для Windows Docker Desktop нужно использовать host.docker.internal
+      NEXT_PUBLIC_API_URL: http://host.docker.internal:8000 
     ports:
       - "3000:3000"
     volumes:
